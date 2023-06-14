@@ -1,11 +1,10 @@
-from bs4 import BeautifulSoup as bs
+import sys
+
+from bs4 import BeautifulSoup as bs, NavigableString
+import pandas as pd
 from requests import Session
 
-import pandas as pd
-
 AO3_URL = "https://archiveofourown.org"
-URL = "https://archiveofourown.org/works?commit=Sort+and+Filter&work_search%5Bsort_column%5D=kudos_count&work_search%5Bother_tag_names%5D=&work_search%5Bexcluded_tag_names%5D=&work_search%5Bcrossover%5D=&work_search%5Bcomplete%5D=T&work_search%5Bwords_from%5D=&work_search%5Bwords_to%5D=&work_search%5Bdate_from%5D=&work_search%5Bdate_to%5D=&work_search%5Bquery%5D=&work_search%5Blanguage_id%5D=en&tag_id=Lán+Zhàn+%7C+Lán+Wàngjī*s*Wèi+Yīng+%7C+Wèi+Wúxiàn"
-NB_PAGES = 2
 
 # Output titre, ratio, link, tags, rating
 
@@ -33,35 +32,51 @@ class Work:
 
     def get_info(self):
         return (
-            self.title,
+            self.title.replace(";", ","),
             self.ratio_kudos,
             self.ratio_bookmarks,
             self.link,
-            self.tags,
-            self.rating,
+            self.tags.replace(";", ","),
+            self.rating.replace(";", ","),
         )
 
     def get_tags(self):
         tags = self.content.find("ul", {"class": "tags commas"}).find_all("li")
         tags = [tag.contents[0].contents[0] for tag in tags]
-        tags[0] = tags[0].contents[0]
-        tags[1] = tags[1].contents[0]
+        tags = [
+            tag.contents[0] if type(tag) != NavigableString else tag for tag in tags
+        ]
         tags = ", ".join(tags)
         return tags
 
 
 def get_page(base_url, page_number):
-    a, b = base_url.split("Sort+and+Filter")
-    return a + "Sort+and+Filter" + f"&page={page_number}" + b
+    if "Sort+and+Filter" in base_url:
+        a, b = base_url.split("Sort+and+Filter")
+        return a + "Sort+and+Filter" + f"&page={page_number}" + b
+    else:
+        return base_url + f"?page={page_number}"
 
 
 if __name__ == "__main__":
+    url = "https://archiveofourown.org/works?commit=Sort+and+Filter&work_search%5Bsort_column%5D=kudos_count&work_search%5Bother_tag_names%5D=&work_search%5Bexcluded_tag_names%5D=&work_search%5Bcrossover%5D=&work_search%5Bcomplete%5D=T&work_search%5Bwords_from%5D=&work_search%5Bwords_to%5D=&work_search%5Bdate_from%5D=&work_search%5Bdate_to%5D=&work_search%5Bquery%5D=&work_search%5Blanguage_id%5D=en&tag_id=Lán+Zhàn+%7C+Lán+Wàngjī*s*Wèi+Yīng+%7C+Wèi+Wúxiàn"
+    nb_pages = 1
+    if len(sys.argv) == 2:
+        url = sys.argv[1]
+    if len(sys.argv) == 3:
+        url = sys.argv[1]
+        nb_pages = int(sys.argv[2])
     session = Session()
     infos = []
-    for page in range(NB_PAGES):
-        site = session.get(get_page(URL, page + 1))
+    for page in range(nb_pages):
+        site = session.get(get_page(url, page + 1))
         content = bs(site.content, "html.parser")
         works = content.find_all("li", {"role": "article"})
         for work in works:
             parsed_work = Work(work)
             infos.append(parsed_work.get_info())
+    dataframe = pd.DataFrame.from_records(
+        infos,
+        columns=["title", "ratio_kudos", "ratio_bookmarks", "link", "tags", "rating"],
+    )
+    dataframe.to_csv("works.csv", sep=";")
